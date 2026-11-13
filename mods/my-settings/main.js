@@ -9,7 +9,7 @@
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input } from "gpui-base";
 import { props, closeOverlay, theme, shared, setShared } from "herdr";
-import { LOADERS, loader, kame, kameShot, kameTitle, kameFrame, loaderColor } from "./loader.js";
+import { LOADERS, loader, kame, kameShot, kameTitle, kameFrame, loaderColor, KAME_CAST, kameCastOn } from "./loader.js";
 import { DOTS, SEEN, doneDot, seenDot, radarTicker, stampFrame, stampOn, stampMode, doneStamp } from "./radar.js";
 import { SPEEDS, EASINGS, foldSettings } from "./fold.js";
 import { shimmerOn, shimmerText } from "./shimmer.js";
@@ -79,16 +79,19 @@ export default class CustomSettings extends View {
   }
 
   // One card per choice, with a live preview: clicking it stores its id in shared `key`.
-  cards(t, items, key, fallback, preview) {
+  // `extra(c)`: something of the card's own drawn inside it (or null), such as a switch.
+  cards(t, items, key, fallback, preview, extra = () => null) {
     const chosen = shared(key) ?? fallback;
     const card = (c) => {
       const on = c.id === chosen;
-      return h_flex().id(`cs-${key}-${c.id}`).w(CARD_W).h(CARD_H).flex_none().items_center().justify_center().rounded(10).cursor_pointer()
+      const more = extra(c);
+      return h_flex().id(`cs-${key}-${c.id}`).relative().w(CARD_W).h(CARD_H).flex_none().items_center().justify_center().rounded(10).cursor_pointer()
         .border(2).border_color(on ? t.accent : t.border).bg(t.background)
         .hover((s) => s.bg(t.hover))
         .tooltip(c.name)
         .on_click((_e, cx) => { setShared(key, c.id); cx.notify(); })
-        .child(preview(c));
+        .child(preview(c))
+        .when(Boolean(more), (el) => el.child(more));
     };
     return h_flex().flex_wrap().gap(14).children(items.map(card));
   }
@@ -113,7 +116,7 @@ export default class CustomSettings extends View {
   loaders(t) {
     return v_flex().gap(18)
       .child(this.heading(t, "Loader", "What shows while an agent works: in the sidebar, the tab bar, pane headers, the picker and panels."))
-      .child(this.cards(t, LOADERS, "loader.style", "hamster", (c) => loader(t, 40, c.id)))
+      .child(this.cards(t, LOADERS, "loader.style", "hamster", (c) => loader(t, 40, c.id), (c) => (c.id === "kame" ? this.castSwitch(t) : null)))
       .child(v_flex()
         .child(this.colorSetting(t, "loader.color", "Default keeps each loader's own colors; the hamster stays itself, its wheel takes the color."))
         .child(this.setting(t, "Shimmer", "A band of light sweeps the name of a working agent or sub-agent in Workspaces.",
@@ -124,19 +127,38 @@ export default class CustomSettings extends View {
         .when(shared("loader.style") === "kame", (el) => el.child(this.kamePreview(t))));
   }
 
+  // Inside the Kamehameha card: Characters, on or off (shared "kame.cast"). On, each
+  // working run picks a fighter at random. Its own click, so it doesn't pick the card.
+  castSwitch(t) {
+    const on = kameCastOn();
+    const knob = div().size(8).rounded_full().bg("#ffffff").mt(2).ml(on ? 12 : 2);
+    return h_flex().absolute().bottom(8).left(0).right(0).justify_center()
+      .child(h_flex().id("cs-kame-cast").gap(6).px(8).py(3).items_center().rounded_full().border(1)
+        .border_color(on ? t.accent : t.border).bg(t.raised).text_size(11).text_color(on ? t.foreground : t.muted)
+        .hover((s) => s.text_color(t.foreground))
+        .tooltip("A fighter at random each run: Goku, Piccolo, Vegeta, Frieza, Krillin, Trunks or Goten")
+        .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
+        .on_click((_e, cx) => { cx.stop_propagation(); setShared("kame.cast", !on); cx.notify(); })
+        .child("Characters")
+        .child(div().w(22).h(12).flex_none().rounded_full().bg(on ? t.accent : t.border).child(knob)));
+  }
+
   // Kamehameha: a title that's charged at for three ticks (the ball growing, then the ki), then shot, blown apart and rewritten (8 s a round).
   kamePreview(t) {
     this.radarShown = true; // the ticker drives the cycle
     const tick = this.tick ?? 0;
     const key = `cs-kame-${Math.floor(tick / 10)}`;
     const text = "Fixing the login redirect";
+    // With characters on, each round is the next fighter.
+    const fighter = kameCastOn() ? KAME_CAST[Math.floor(tick / 10) % KAME_CAST.length] : null;
+    if (fighter) (this.kameWork ??= new Map()).set(key, { fighter });
     const shot = tick % 10 >= 3 ? kameShot(this, t, key, (this.kameSince ??= {})[key] ??= Date.now(), 8 + (this.kameTitleW ?? 0), 20) : null;
     const title = div().id("cs-kame-title").flex_1().min_w(0).text_color(t.foreground)
       .on_size_change(({ width }, cx) => { if (this.kameTitleW !== width) { this.kameTitleW = width; cx.notify(); } })
       .child(kameTitle(this, key, text, this.kameTitleW, 6.7) ?? div().truncate().child(text));
     return h_flex().mt(14).w(320).h(34).px(10).gap(8).items_center().rounded(8).border(1).border_color(t.border).bg(t.background).text_size(12.5)
       .child(title)
-      .child(shot ?? kame(t, 20, loaderColor(t), [2, 4, 6][Math.min(2, tick % 10)]));
+      .child(shot ?? kame(t, 20, loaderColor(t), [2, 4, 6][Math.min(2, tick % 10)], fighter));
   }
 
   finished(t) {

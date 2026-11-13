@@ -37,6 +37,7 @@
     "cmd-shift-/": "app.help",
     "cmd-b": "layout.toggle:sidebar",
     "cmd-alt-p": "workspaces.fold-all",
+    "cmd-alt-k": "my-tabs.attack",
     "cmd-=": "app.zoom_in",
     "cmd-+": "app.zoom_in",
     "cmd--": "app.zoom_out",

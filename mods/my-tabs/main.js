@@ -1,6 +1,6 @@
 import { View, div, svg, image } from "gpui-kit";
 import { h_flex } from "gpui-base";
-import { loader, workingLoader, kameShot, kameTitle, kameFrame, programIcon } from "./loader.js";
+import { loader, workingLoader, kame, kameShot, kameTitle, kameFrame, programIcon, KAME_CAST } from "./loader.js";
 import { doneDot, radarTicker } from "./radar.js";
 import { spaces, panes, focused, run, openOverlay, theme, window, shared, setShared, layout, settings, nextCommand, notify } from "herdr";
 import { syncNames } from "./names.js";
@@ -100,6 +100,30 @@ export function closeTab(id, cx) {
   closeLater(tab, cx);
 }
 
+// Just for fun: "my-tabs.attack" (herdr-app do my-tabs.attack) sends the whole
+// Kamehameha cast at the tab bar, and at the Workspaces sidebar's rows (workspaces.attack). Each tab gets a fighter, in turn (Goku,
+// Piccolo, Vegeta, ...), who powers up through every stage, then fires at its
+// title and blasts off, a beat after the tab before. Whatever the loader setting.
+const ATTACK_STAGGER = 350; // ms between one tab's fighter and the next
+const ATTACK_CHARGE = 3200; // ms of powering up, the ball to full lightning
+const ATTACK_LENGTH = 9000; // ms from a tab's shot to its title written back
+
+// The attacking fighter for tab `c` (the `i`th shown), or null when no attack is on for it.
+function attacker(view, t, c, i) {
+  const at = view.attack;
+  if (!at) return null;
+  const start = at.at + i * ATTACK_STAGGER, ms = Date.now() - start;
+  if (ms > ATTACK_CHARGE + ATTACK_LENGTH) return null;
+  view.radarShown = true; // the ticker drives it
+  const key = `attack-${at.id}-${c.id}`;
+  const fighter = KAME_CAST[i % KAME_CAST.length];
+  const stage = Math.max(0, Math.min(6, Math.floor((ms / ATTACK_CHARGE) * 7)));
+  (view.kameWork ??= new Map()).set(key, { at: start, fighter, stage, render: view.kameRender ?? 0 });
+  if (ms < ATTACK_CHARGE) return { key, figure: kame(t, 20, null, stage, fighter), shot: false };
+  const shot = kameShot(view, t, key, start + ATTACK_CHARGE, 7 + (view.titleW?.[c.id] ?? 0), 20, undefined, "kame");
+  return shot ? { key, figure: shot, shot: true } : { key, figure: null, shot: true };
+}
+
 function find(node, id) {
   if (node?.id === id) return node;
   for (const child of node?.children ?? []) {
@@ -124,6 +148,7 @@ export default class Tabs extends View {
     cx.spawn(async (cx) => {
       for (;;) {
         const c = await nextCommand();
+        if (c === "attack") { this.attack = { id: Date.now().toString(36), at: Date.now() }; run("workspaces.attack"); cx.notify(); continue; }
         const m = /^(close|close-now|pane-close|undo-close|delete-worktree|undo-delete)(?::(.+))?$/.exec(c);
         if (m?.[1] === "close") closeTab(m[2], cx);
         else if (m?.[1] === "close-now" && m[2]) closeTabNow(m[2]);
@@ -204,9 +229,10 @@ export default class Tabs extends View {
       const program = panes().find(p => p.tab === c.id && p.program?.agent)?.program ?? panes().find(p => p.tab === c.id)?.program;
       const name = /^tb\d+$/.test(c.name) ? program?.name ?? "Terminal" : c.name;
       // Kamehameha: the shot across the title (7 px gap + its width), which blows its letters away.
-      const shot = c.status === "done" ? kameShot(this, t, c.id, this.finishedAt?.[c.id], 7 + (this.titleW?.[c.id] ?? 0), 20) : null;
+      const attack = attacker(this, t, c, i);
+      const shot = attack ? null : c.status === "done" ? kameShot(this, t, c.id, this.finishedAt?.[c.id], 7 + (this.titleW?.[c.id] ?? 0), 20) : null;
       const title = c.zoomed ? `${name} Z` : name;
-      const blast = kameTitle(this, c.id, title, 170, 6.9);
+      const blast = kameTitle(this, attack?.shot ? attack.key : c.id, title, 170, 6.9);
       return h_flex().id(`tab-${c.id}`).h(29).px(10).gap(7).rounded(7).items_center().flex_none().text_size(12.8)
         .border(1).border_color(c.active ? t.border : t.chrome).bg(c.active ? t.raised : t.chrome).text_color(c.active ? t.foreground : t.muted)
         .hover(s => s.bg(t.hover))
@@ -223,9 +249,10 @@ export default class Tabs extends View {
           : div().id(`title-${c.id}`).max_w(170).truncate()
             .on_size_change(({ width }) => { (this.titleW ??= {})[c.id] = width; })
             .child(title))
-        .when(c.status === "working", el => el.child(workingLoader(this, t, c.id, 20)))
-        .when(c.status === "blocked", el => el.child(div().size(6).rounded(3).bg(t.blocked)))
-        .when(c.status === "done", el => el.child(shot ?? doneDot(this, t, c.id, 18)))
+        .when(Boolean(attack?.figure), el => el.child(attack.figure))
+        .when(!attack && c.status === "working", el => el.child(workingLoader(this, t, c.id, 20)))
+        .when(!attack && c.status === "blocked", el => el.child(div().size(6).rounded(3).bg(t.blocked)))
+        .when(!attack && c.status === "done", el => el.child(shot ?? doneDot(this, t, c.id, 18)))
         .when(c.active, el => el.child(div().id(`close-${c.id}`).text_color(t.dim).on_mouse_down("left", stop).on_click((_e, cx) => { cx.stop_propagation(); closeTab(c.id, cx); }).child(svg("mods/pane/close.svg").size(12))));
     };
     const root = layout(), sidebar = find(root, "sidebar"), w = window();

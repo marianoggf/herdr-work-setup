@@ -5,12 +5,16 @@
 // sub-agents under their parent. Click a row to go to its agent (or the space), right-click for its menu, drag to reorder.
 
 import { View, div, image, svg } from "gpui-kit";
-import { loader, workingLoader, kameShot, kameTitle, kameFrame, programIcon } from "./loader.js";
+import { loader, workingLoader, kame, kameShot, kameTitle, kameFrame, programIcon, KAME_CAST } from "./loader.js";
 import { doneDot, seenDot, radarTicker, stampFrame, stampOn, doneStamp } from "./radar.js";
 import { motion } from "./fold.js";
 import { shimmerOn, shimmerText } from "./shimmer.js";
 import { v_flex, h_flex } from "gpui-base";
 import { spaces, machines, panes, agents, terminals, setAgentOrder, run, openOverlay, exec, hc, theme, shared, setShared, watchFolder, window, layout, appHome, readTextFile, nextCommand } from "herdr";
+
+const ATTACK_STAGGER = 350; // ms between one row's fighter and the next (see attacker)
+const ATTACK_CHARGE = 3200; // ms of powering up, the ball to full lightning
+const ATTACK_LENGTH = 9000; // ms from a row's shot to its title written back
 
 function find(node, id) {
   if (node?.id === id) return node;
@@ -233,6 +237,7 @@ export default class Spaces extends View {
       for (;;) {
         const c = await nextCommand();
         if (c === "fold-all") foldAll();
+        if (c === "attack") this.attack = { id: Date.now().toString(36), at: Date.now() };
         const forget = /^forget-repo:(.+)$/.exec(c);
         if (forget) this.keepRepos(this.keptRepos.filter((k) => k.repo !== decodeURIComponent(forget[1])));
         const remove = /^remove-repo:(.+)$/.exec(c);
@@ -399,6 +404,26 @@ export default class Spaces extends View {
   // A tree line runs down from the space's icon to each agent, so they read as the space's tabs.
 // While its sub-agents are listed and working under it, it leaves the loader to them.
   // Only the selection and the rows above it read bright: the focused tab of the active space.
+  // Just for fun: "workspaces.attack" (or my-tabs.attack, which sends this too) sends
+  // the whole Kamehameha cast at the tab rows, top to bottom, a fighter each in
+  // turn (Goku, Piccolo, Vegeta, ...): each powers up through every stage, then
+  // fires across its row's title and blasts off, as when an agent finishes, a beat
+  // after the row above. Whatever the loader setting. Null when no attack is on for the row.
+  attacker(t, key, i) {
+    const at = this.attack;
+    if (!at) return null;
+    const start = at.at + i * ATTACK_STAGGER, ms = Date.now() - start;
+    if (ms > ATTACK_CHARGE + ATTACK_LENGTH) return null;
+    this.radarShown = true; // the ticker drives it
+    const k = `attack-${at.id}-${key}`;
+    const fighter = KAME_CAST[i % KAME_CAST.length];
+    const stage = Math.max(0, Math.min(6, Math.floor((ms / ATTACK_CHARGE) * 7)));
+    (this.kameWork ??= new Map()).set(k, { at: start, fighter, stage, render: this.kameRender ?? 0 });
+    if (ms < ATTACK_CHARGE) return { key: k, figure: kame(t, 20, null, stage, fighter), shot: false };
+    const shot = kameShot(this, t, k, start + ATTACK_CHARGE, 8 + (this.titleW?.[key] ?? 0), 20, undefined, "kame");
+    return { key: k, figure: shot, shot: true };
+  }
+
   agentRow(a, t, indent, last, spaceActive) {
     const when = this.changed[a.address]?.at;
     const selected = a.focused && spaceActive;
@@ -410,7 +435,8 @@ export default class Spaces extends View {
     const rowId = `ws-ag-${a.address}`;
     // Working while its sub-agents work in plain view under it: their loaders say so; folded, its own does.
     const busyBelow = a.status === "working" && this.tree(a.address).some((s) => !s.t.group && kidStatus(s.t, this.listed) === "working");
-    const since = a.status === "done" ? this.finishedAt?.[a.address] : null;
+    const attack = this.attacker(t, a.address, this.attackRow = (this.attackRow ?? -1) + 1);
+    const since = !attack && a.status === "done" ? this.finishedAt?.[a.address] : null;
     const stamp = since && stampOn() ? doneStamp(this, a.address, since) : null;
     // Kamehameha: the shot back across the stamp (when one shows) and the title, 8 px gaps.
     const shot = since ? kameShot(this, t, a.address, since, 8 + (this.titleW?.[a.address] ?? 0) + (stamp ? Math.round(Math.round(20 * 0.8) * 2.7) + 8 : 0), 20) : null;
@@ -420,12 +446,12 @@ export default class Spaces extends View {
       .on_click(() => run("pane.focus", { pane: a.pane }))
       .child(branch)
       .when(Boolean(pic), (el) => el.child(pic))
-      .child(a.status === "working" && shimmerOn()
+      .child(!attack && a.status === "working" && shimmerOn()
         ? shimmerText(t, `shim-${a.address}`, this.label(a), this.shimmerWidths ??= {})
         : div().id(`ws-title-${a.address}`).flex_1().min_w(0).text_color(selected ? t.foreground : t.muted)
           .on_size_change(({ width }) => { (this.titleW ??= {})[a.address] = width; })
           // A Kamehameha shot blows the letters out of the box, so it isn't clipped then.
-          .child(kameTitle(this, a.address, this.label(a), this.titleW?.[a.address], 6.7) ?? div().truncate().child(this.label(a))))
+          .child(kameTitle(this, attack?.shot ? attack.key : a.address, this.label(a), this.titleW?.[a.address], 6.7) ?? div().truncate().child(this.label(a))))
       .when(this.full[a.address] >= FULL, (el) => el.child(this.fullBadge(t, a)))
       .when(Boolean(when) && this.hovered === rowId, (el) => el.child(div().flex_none().text_size(11).text_color(t.dim).child(duration(this.now - when))))
       // Hovered, a trash can closes its tab, with the undo (and the ask, when an agent runs there) my-tabs gives.
@@ -436,7 +462,8 @@ export default class Spaces extends View {
         .on_click((_e, cx) => { cx.stop_propagation(); run(`my-tabs.close:${a.tab}`); })
         .child(svg("mods/my-menu/trash-2.svg").size(12))))
       .when(Boolean(stamp), (el) => el.child(stamp))
-      .when(!busyBelow && this.shows(a.status), (el) => el.child(shot ?? this.status(t, a.status, false, a.address)));
+      .when(Boolean(attack?.figure), (el) => el.child(attack.figure))
+      .when(!attack && !busyBelow && this.shows(a.status), (el) => el.child(shot ?? this.status(t, a.status, false, a.address)));
   }
 
   // A sub-agent, under its parent with tree lines. Click peeks at it; a Claude sub-agent shows what it is
@@ -1091,6 +1118,7 @@ export default class Spaces extends View {
 
   render() {
     this.radarShown = false;
+    this.attackRow = -1; // the attack's fighters go down the rows in order
     stampFrame(this);
     kameFrame(this);
     const t = theme();

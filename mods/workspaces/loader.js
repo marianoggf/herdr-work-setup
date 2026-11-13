@@ -210,8 +210,32 @@ function kameImage(src, size, big) {
   return div().relative().size(size).flex_none().child(image(src).absolute().left(-size).top(-size).size(size * 3));
 }
 
-export function kame(_t, size = 22, color = null, stage = KAME_FULL) {
-  return kameImage(`${DIR}/kame/kame-charge${stage}${renderSuffix(color)}.webp`, size, stage >= KAME_BIG);
+// Characters (Custom settings > Loader > Characters, shared "kame.cast"): when
+// on, each working run picks a fighter at random, who charges, fires and flies
+// off with the same moves and timings, drawn by kame/cast.py into
+// kame/cast/<name>/ in their own colors: Goku (with a head and hair), Piccolo,
+// Vegeta (a yellow Final Flash for a shot), Frieza (a purple one), Krillin
+// (shorter, so his palms are lower), and the boys Trunks (a yellow shot) and
+// Goten, as short as Krillin. Off, nothing here changes anything.
+export const KAME_CAST = ["goku", "piccolo", "vegeta", "frieza", "krillin", "trunks", "goten"];
+export function kameCastOn() {
+  return shared("kame.cast") === true;
+}
+const KAME_BEAM = ["#40aaff88", "#96e1ff", "#96e1ffcc"]; // the shot's glow, body and burst
+const KAME_YELLOW = ["#ffc41e88", "#fff096", "#fff096cc"];
+const KAME_BEAMS = { vegeta: KAME_YELLOW, trunks: KAME_YELLOW, frieza: ["#b046ff88", "#e2b0ff", "#e2b0ffcc"] };
+const KAME_SHORT = { x: 0.306, y: 0.484 }; // the firing palms of the short ones (Goku's: KAME_HAND)
+const KAME_HANDS = { krillin: KAME_SHORT, trunks: KAME_SHORT, goten: KAME_SHORT };
+
+// One of the loader's images (`name` + `ext`), for `fighter` (null: the loader in `color`).
+function kameSrc(fighter, name, ext, color) {
+  if (fighter) return `${DIR}/kame/cast/${fighter}/${name}.${ext}`;
+  return `${DIR}/kame/${name}${renderSuffix(color)}.${ext}`;
+}
+
+export function kame(_t, size = 22, color = null, stage = KAME_FULL, fighter = null) {
+  // A fighter's images are all on the 3x canvas (room for hair); the plain loader's from stage 5.
+  return kameImage(kameSrc(fighter, `kame-charge${stage}`, "webp", color), size, Boolean(fighter) || stage >= KAME_BIG);
 }
 
 // The charge for `key`, grown by how long it has been drawn working: a key not
@@ -221,13 +245,13 @@ function kameCharge(view, t, key, size, color) {
   view.kameWork ??= new Map();
   const now = view.kameRender ?? 0;
   let w = view.kameWork.get(key);
-  if (!w || w.render < now - 1) w = { at: Date.now() };
+  if (!w || w.render < now - 1) w = { at: Date.now(), fighter: kameCastOn() ? KAME_CAST[Math.floor(Math.random() * KAME_CAST.length)] : null };
   w.render = now;
   const ms = Date.now() - w.at;
   w.stage = KAME_STAGE_AT.filter((at) => ms >= at).length - 1;
   view.kameWork.set(key, w);
   if (w.stage < KAME_STAGE_AT.length - 1) view.radarShown = true;
-  return kame(t, size, color, w.stage);
+  return kame(t, size, color, w.stage, w.fighter);
 }
 
 // What a working `key` shows, for views that call kameFrame each render (the
@@ -276,33 +300,36 @@ export function kameShot(view, t, key, since, reach, size = 20, color = loaderCo
   view.kameDrawn.set(key, now);
   if (fired && view.kameFiredAt.get(key)?.since !== since) view.kameFiredAt.set(key, { since, at: Date.now() });
   view.radarShown = true;
-  const hx = size * KAME_HAND.x, hy = size * KAME_HAND.y;
+  const fighter = view.kameWork?.get(key)?.fighter ?? null; // who charged it
+  const hand = KAME_HANDS[fighter] ?? KAME_HAND;
+  const hx = size * hand.x, hy = size * hand.y;
   const len = fired ? hx + Math.max(0, reach) : 0;
   const fade = { duration: KAME_FADE, delay: KAME_HOLD, easing: "ease-in" };
   const beam = (id, h, bg) => div().id(`kame-${key}-${id}`).absolute().rounded_full().bg(bg)
     .left(hx - len).top(hy - h / 2).w(len).h(h).opacity(fired ? 0 : 1)
     .transition("left", KAME_SHOT).transition("width", KAME_SHOT).transition("opacity", fade);
   const b = fired ? size * 1.3 : 0; // the burst at the tip
-  const burst = div().id(`kame-${key}-burst`).absolute().rounded_full().bg("#96e1ffcc")
+  const colors = KAME_BEAMS[fighter] ?? KAME_BEAM;
+  const burst = div().id(`kame-${key}-burst`).absolute().rounded_full().bg(colors[2])
     .left(hx - len - b / 2).top(hy - b / 2).size(b).opacity(fired ? 0 : 1)
     .transition("left", KAME_SHOT).transition("top", KAME_SHOT).transition("width", KAME_SHOT).transition("height", KAME_SHOT)
     .transition("opacity", { duration: 450, delay: KAME_SHOT.duration, easing: "ease-in" });
-  const v = renderSuffix(color);
   const aimed = view.kameWork?.get(key)?.stage ?? KAME_FULL; // the charge it had built
   // Charged to Super Saiyan, he fires still transformed; after the shot he's back to normal.
   // With the Crater finished dot, the exit ends on the crater and holds it (the
   // dot draws that same frame), so the dot takes over without a seam.
-  const [src, big] = leaving ? [`kame-exit${shared("dot.style") === "crater" ? "-hold" : ""}${v}.webp`, true]
-    : !fired ? [`kame-charge${aimed}${v}.webp`, aimed >= KAME_BIG]
-    : aimed >= KAME_BIG ? [`kame-fire${aimed}${v}.webp`, true]
-    : [`kame-fire${v}.png`, false];
-  const fig = image(`${DIR}/kame/${src}`).absolute();
+  const [name, ext, big] = leaving ? [`kame-exit${shared("dot.style") === "crater" ? "-hold" : ""}`, "webp", true]
+    : !fired ? [`kame-charge${aimed}`, "webp", aimed >= KAME_BIG]
+    : aimed >= KAME_BIG ? [`kame-fire${aimed}`, "webp", true]
+    : ["kame-fire", "png", false];
+  const fig = image(kameSrc(fighter, name, ext, color)).absolute();
+  const wide = big || Boolean(fighter); // a fighter's images are all on the 3x canvas
   return div().relative().size(size).flex_none()
-    .child(beam("glow", size * 0.55, "#40aaff88"))
-    .child(beam("mid", size * 0.32, "#96e1ff"))
+    .child(beam("glow", size * 0.55, colors[0]))
+    .child(beam("mid", size * 0.32, colors[1]))
     .child(beam("core", size * 0.14, "#ffffff"))
     .child(burst)
-    .child(big ? fig.left(-size).top(-size).size(size * 3) : fig.left(0).top(0).size(size));
+    .child(wide ? fig.left(-size).top(-size).size(size * 3) : fig.left(0).top(0).size(size));
 }
 
 // The title the shot destroys, or null when no shot is on for `key` (draw the
