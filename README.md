@@ -30,23 +30,6 @@ click away.
 
 <br clear="right">
 
-### Loaders worth watching
-
-While an agent works, its tab and its sidebar row play a loader. Custom
-settings (`cmd-alt-l`) picks which one, and the mark a finished agent leaves.
-
-<p align="center">
-  <img src="screenshots/loader-stick-fight.webp" width="150" alt="Stick Fight: two stick figures trading punches, kicks and flips">
-  &nbsp;
-  <img src="screenshots/loader-kamehameha.webp" width="150" alt="Kamehameha: a stick figure charging an energy ball">
-  &nbsp;
-  <img src="screenshots/loader-blast-off.webp" width="150" alt="The Kamehameha fighter blasting off and leaving a crater">
-</p>
-
-<p align="center"><sub>Stick Fight · Kamehameha, charging while the agent works · his exit once it is done</sub></p>
-
-Also in the set: Hamster, Pac-Man and Status Face.
-
 ### The pane says what the agent is running
 
 <p align="center">
