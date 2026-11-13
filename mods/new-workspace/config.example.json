@@ -1,0 +1,10 @@
+{
+  "projects": "~/Projects",
+  "pinned": ["api", "web"],
+  "branchPrefix": "me/",
+  "agent": ["claude"],
+  "setup": {
+    "api": { "copy": [".env.local"], "run": "bundle install" },
+    "web": { "run": "pnpm install" }
+  }
+}

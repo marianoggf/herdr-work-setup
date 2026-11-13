@@ -1,0 +1,8 @@
+#!/bin/sh
+# Starts Claude Code with the account picked in the sidebar's Usage section: an Orca
+# account folder as CLAUDE_CONFIG_DIR, or the system default when none is picked.
+dir=$(cat "$HOME/.config/herdr-app/state/claude-account" 2>/dev/null)
+if [ -n "$dir" ] && [ -d "$dir" ]; then
+  export CLAUDE_CONFIG_DIR="$dir"
+fi
+exec claude "$@"

@@ -1,0 +1,2 @@
+{ "programs": {
+    "claude": { "run": ["/Users/mariano/.config/herdr-app/bin/claude-account"] } } }

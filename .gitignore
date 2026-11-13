@@ -1,0 +1,63 @@
+# This folder is Herdr's home. Herdr ships and writes most of it, so only my
+# own files are tracked. Anything new at the top level stays ignored until it
+# is listed here.
+/*
+!/.gitignore
+!/README.md
+!/keys.json
+!/settings.json
+!/programs.json
+!/bin/
+!/layouts/
+!/mods/
+!/screenshots/
+
+# Layouts Herdr ships, the clicks it saves for every layout, and the copies it
+# sets aside on a reset.
+/layouts/main.json
+/layouts/terminals.json
+/layouts/win98.json
+/layouts/win98.svg
+/layouts/.state/
+/layouts/*.old-*
+*.reset-*
+
+# Mods Herdr ships: the ones listed in installed.json. A new mod of mine is
+# tracked without touching this list; a new shipped one has to be added.
+/mods/agents/
+/mods/changes/
+/mods/confirm/
+/mods/files/
+/mods/help/
+/mods/machine-add/
+/mods/menu/
+/mods/new-menu/
+/mods/pane/
+/mods/peek/
+/mods/picker/
+/mods/prompt/
+/mods/spaces/
+/mods/tabs/
+/mods/terminals-bar/
+/mods/terminals-pane/
+/mods/toast/
+/mods/win98/
+/mods/workspace-chrome/
+/mods/workspace-status/
+/mods/worktree/
+
+# Written into every mod folder by Herdr.
+gpui-kit.d.ts
+herdr.d.ts
+jsconfig.json
+
+# This machine's own values: which repos, team and accounts. The top-level
+# local.json is already ignored by the first rule.
+/mods/new-workspace/config.json
+
+# Downloaded or cached by a mod while it runs.
+/mods/automate-everything/.target/
+/mods/prs/avatars/
+
+__pycache__/
+.DS_Store
